@@ -1,0 +1,32 @@
+global
+    daemon
+    maxconn 1024
+
+defaults
+    mode http
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+    stats enable
+    stats uri /haproxy?stats
+
+frontend http
+    bind *:80
+    {{range services}}{{if in .Tags "api"}}
+    acl is-api-{{.Name}}-path path_beg /api/{{.Name}}
+    use_backend {{.Name}} if is-api-{{.Name}}-path
+    {{end}}{{end}}
+
+{{range services}}{{if in .Tags "api"}}
+backend {{.Name}}{{$services:=service .Name "passing"}}
+  {{if gt (len $services) 0}}
+  mode http
+  option http-server-close
+  reqrep ^([^\ ]*\ /)api/{{.Name}}[/]?(.*)     \1\2
+  balance roundrobin{{range $services}}
+  server {{.ID}} {{.Address}}:{{.Port}} check{{end}}
+  {{else}}
+  server dead 127.0.0.1:65535 # 503
+  {{end}}
+{{end}}{{end}}
